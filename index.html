@@ -100,3 +100,35 @@
     document.getElementById('error').style.display = 'block';
   }
 </script>
+// Agregar esto al final del script, antes de cerrar </script>
+
+// Log de debug
+console.log('Email detectado:', email);
+console.log('URL de polling:', APPS_SCRIPT_URL + '?email=' + encodeURIComponent(email) + '&callback=handleResponse');
+
+// Modificar la función handleResponse para agregar logs
+window.handleResponse = function (data) {
+  console.log('Respuesta recibida:', data); // ← AGREGAR ESTA LÍNEA
+  
+  limpiarScript();
+  if (yaRedirigido) return;
+  if (data.status === 'success' && data.link) {
+    yaRedirigido = true;
+    clearInterval(polling);
+    clearTimeout(timeoutId);
+    mostrarExito();
+    setTimeout(() => {
+      window.location.href = data.link;
+    }, 1500);
+    return;
+  }
+  if (data.status === 'error') {
+    intentos++;
+    if (intentos >= 5) {
+      clearInterval(polling);
+      clearTimeout(timeoutId);
+      mostrarError(data.message || 'Error al generar el pago.');
+    }
+  }
+  // status === 'pending' → no hacer nada
+};
