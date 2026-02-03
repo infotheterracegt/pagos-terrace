@@ -1,133 +1,232 @@
-<script>
-  const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyHi-ESIpXU4mEA9Qj1OxE3IwNK6eO85WwpPhaN-lRX4nZ-eygwHxHeNnmsn4PIwgyi/exec';
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Terrace - Procesando pago</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background-color: #0a0a0a;
+      color: #ffffff;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    
+    .container {
+      text-align: center;
+      max-width: 500px;
+      width: 100%;
+    }
+    
+    h1 {
+      font-size: 2.5rem;
+      letter-spacing: 0.3em;
+      margin-bottom: 3rem;
+      font-weight: 300;
+    }
+    
+    .content {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      padding: 3rem 2rem;
+    }
+    
+    .spinner {
+      width: 50px;
+      height: 50px;
+      border: 4px solid rgba(255, 255, 255, 0.1);
+      border-top-color: #ffffff;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 1.5rem;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    .warning-icon {
+      font-size: 4rem;
+      margin-bottom: 1.5rem;
+    }
+    
+    .success-icon {
+      font-size: 4rem;
+      margin-bottom: 1.5rem;
+      color: #4ade80;
+    }
+    
+    .message {
+      font-size: 1.1rem;
+      line-height: 1.6;
+      color: #e5e5e5;
+      margin-bottom: 1rem;
+    }
+    
+    .error-message {
+      color: #ef4444;
+    }
+    
+    .submessage {
+      font-size: 0.9rem;
+      color: #999;
+      margin-top: 1rem;
+    }
+    
+    .btn {
+      display: inline-block;
+      margin-top: 2rem;
+      padding: 0.75rem 2rem;
+      background-color: #d4af37;
+      color: #0a0a0a;
+      text-decoration: none;
+      border-radius: 4px;
+      font-weight: 600;
+      transition: background-color 0.3s;
+    }
+    
+    .btn:hover {
+      background-color: #c29d2f;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>THE TERRACE</h1>
+    
+    <!-- Estado: Cargando -->
+    <div id="loading" class="content">
+      <div class="spinner"></div>
+      <p class="message">Procesando pago...</p>
+      <p class="submessage">Por favor, intenta de nuevo.</p>
+    </div>
+    
+    <!-- Estado: Éxito -->
+    <div id="success" class="content" style="display: none;">
+      <div class="success-icon">✓</div>
+      <p class="message">¡Link generado correctamente!</p>
+      <p class="submessage">Redirigiendo al pago...</p>
+    </div>
+    
+    <!-- Estado: Error -->
+    <div id="error" class="content" style="display: none;">
+      <div class="warning-icon">⚠️</div>
+      <p class="message error-message" id="errorMessage">
+        No se pudo conectar con el servidor. Por favor, intenta de nuevo.
+      </p>
+      <a href="javascript:location.reload()" class="btn">Reintentar</a>
+    </div>
+  </div>
 
-  const POLLING_INTERVAL = 2500;
-  const MAX_TIMEOUT = 120000;
+  <script>
+    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyHi-ESIpXU4mEA9Qj1OxE3IwNK6eO85WwpPhaN-lRX4nZ-eygwHxHeNnmsn4PIwgyi/exec';
+    const POLLING_INTERVAL = 2500;
+    const MAX_TIMEOUT = 120000;
+    const params = new URLSearchParams(window.location.search);
+    const email = params.get('email');
+    let intentos = 0;
+    let polling = null;
+    let timeoutId = null;
+    let yaRedirigido = false;
+    let ultimoScript = null;
 
-  const params = new URLSearchParams(window.location.search);
-  const email = params.get('email');
+    console.log('Email detectado:', email);
 
-  let intentos = 0;
-  let polling = null;
-  let timeoutId = null;
-  let yaRedirigido = false;
-  let ultimoScript = null;
-
-  if (!email) {
-    mostrarError('No se detectó un email válido. Por favor, vuelve al formulario.');
-  } else {
-    polling = setInterval(buscarLink, POLLING_INTERVAL);
-
-    timeoutId = setTimeout(() => {
-      clearInterval(polling);
-      mostrarError('El proceso tardó demasiado. Por favor, intenta de nuevo.');
-    }, MAX_TIMEOUT);
-  }
-
-  function buscarLink() {
-    if (ultimoScript) {
-      document.head.removeChild(ultimoScript);
-      ultimoScript = null;
+    if (!email) {
+      mostrarError('No se detectó un email válido. Por favor, vuelve al formulario.');
+    } else {
+      polling = setInterval(buscarLink, POLLING_INTERVAL);
+      timeoutId = setTimeout(() => {
+        clearInterval(polling);
+        mostrarError('El proceso tardó demasiado. Por favor, intenta de nuevo.');
+      }, MAX_TIMEOUT);
     }
 
-    const script = document.createElement('script');
-    ultimoScript = script;
+    function buscarLink() {
+      if (ultimoScript) {
+        document.head.removeChild(ultimoScript);
+        ultimoScript = null;
+      }
+      const script = document.createElement('script');
+      ultimoScript = script;
+      const url = APPS_SCRIPT_URL +
+        '?email=' +
+        encodeURIComponent(email) +
+        '&callback=handleResponse&_=' +
+        Date.now();
+      
+      console.log('Consultando:', url);
+      script.src = url;
+      
+      script.onerror = function () {
+        intentos++;
+        console.error('Error al cargar script, intento:', intentos);
+        limpiarScript();
+        if (intentos >= 5) {
+          clearInterval(polling);
+          clearTimeout(timeoutId);
+          mostrarError('No se pudo conectar con el servidor. Por favor, intenta de nuevo.');
+        }
+      };
+      document.head.appendChild(script);
+    }
 
-    script.src =
-      APPS_SCRIPT_URL +
-      '?email=' +
-      encodeURIComponent(email) +
-      '&callback=handleResponse&_=' +
-      Date.now(); // cache buster
-
-    script.onerror = function () {
-      intentos++;
+    window.handleResponse = function (data) {
+      console.log('Respuesta recibida:', data);
+      
       limpiarScript();
-
-      if (intentos >= 5) {
+      if (yaRedirigido) return;
+      
+      if (data.status === 'success' && data.link) {
+        yaRedirigido = true;
         clearInterval(polling);
         clearTimeout(timeoutId);
-        mostrarError('No se pudo conectar con el servidor. Por favor, intenta de nuevo.');
+        mostrarExito();
+        setTimeout(() => {
+          window.location.href = data.link;
+        }, 1500);
+        return;
       }
+      
+      if (data.status === 'error') {
+        intentos++;
+        if (intentos >= 5) {
+          clearInterval(polling);
+          clearTimeout(timeoutId);
+          mostrarError(data.message || 'Error al generar el pago.');
+        }
+      }
+      // status === 'pending' → no hacer nada
     };
 
-    document.head.appendChild(script);
-  }
-
-  window.handleResponse = function (data) {
-    limpiarScript();
-
-    if (yaRedirigido) return;
-
-    if (data.status === 'success' && data.link) {
-      yaRedirigido = true;
-      clearInterval(polling);
-      clearTimeout(timeoutId);
-      mostrarExito();
-
-      setTimeout(() => {
-        window.location.href = data.link;
-      }, 1500);
-      return;
-    }
-
-    if (data.status === 'error') {
-      intentos++;
-      if (intentos >= 5) {
-        clearInterval(polling);
-        clearTimeout(timeoutId);
-        mostrarError(data.message || 'Error al generar el pago.');
+    function limpiarScript() {
+      if (ultimoScript) {
+        document.head.removeChild(ultimoScript);
+        ultimoScript = null;
       }
     }
-    // status === 'pending' → no hacer nada
-  };
 
-  function limpiarScript() {
-    if (ultimoScript) {
-      document.head.removeChild(ultimoScript);
-      ultimoScript = null;
+    function mostrarExito() {
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('success').style.display = 'block';
     }
-  }
 
-  function mostrarExito() {
-    document.getElementById('loading').style.display = 'none';
-    document.getElementById('success').style.display = 'block';
-  }
-
-  function mostrarError(mensaje) {
-    document.getElementById('loading').style.display = 'none';
-    document.getElementById('errorMessage').textContent = mensaje;
-    document.getElementById('error').style.display = 'block';
-  }// Log de debug
-console.log('Email detectado:', email);
-console.log('URL de polling:', APPS_SCRIPT_URL + '?email=' + encodeURIComponent(email) + '&callback=handleResponse');
-
-// Modificar la función handleResponse para agregar logs
-window.handleResponse = function (data) {
-  console.log('Respuesta recibida:', data); // ← AGREGAR ESTA LÍNEA
-  
-  limpiarScript();
-  if (yaRedirigido) return;
-  if (data.status === 'success' && data.link) {
-    yaRedirigido = true;
-    clearInterval(polling);
-    clearTimeout(timeoutId);
-    mostrarExito();
-    setTimeout(() => {
-      window.location.href = data.link;
-    }, 1500);
-    return;
-  }
-  if (data.status === 'error') {
-    intentos++;
-    if (intentos >= 5) {
-      clearInterval(polling);
-      clearTimeout(timeoutId);
-      mostrarError(data.message || 'Error al generar el pago.');
+    function mostrarError(mensaje) {
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('errorMessage').textContent = mensaje;
+      document.getElementById('error').style.display = 'block';
     }
-  }
-  // status === 'pending' → no hacer nada
-};
-
-</script>
-
+  </script>
+</body>
+</html>
