@@ -1,212 +1,102 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Procesando pago...</title>
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
+<script>
+  const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyIn5hYqNcybMVJG0677ABowA7SeUhBEM3cutWaaVfd3jVe8EzLLg4sv-qQRGETxml0/exec';
+
+  const POLLING_INTERVAL = 2500;
+  const MAX_TIMEOUT = 120000;
+
+  const params = new URLSearchParams(window.location.search);
+  const email = params.get('email');
+
+  let intentos = 0;
+  let polling = null;
+  let timeoutId = null;
+  let yaRedirigido = false;
+  let ultimoScript = null;
+
+  if (!email) {
+    mostrarError('No se detectó un email válido. Por favor, vuelve al formulario.');
+  } else {
+    polling = setInterval(buscarLink, POLLING_INTERVAL);
+
+    timeoutId = setTimeout(() => {
+      clearInterval(polling);
+      mostrarError('El proceso tardó demasiado. Por favor, intenta de nuevo.');
+    }, MAX_TIMEOUT);
+  }
+
+  function buscarLink() {
+    if (ultimoScript) {
+      document.head.removeChild(ultimoScript);
+      ultimoScript = null;
     }
 
-    body {
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: #0f0f0f;
-      font-family: 'Segoe UI', sans-serif;
-      color: #fff;
-    }
+    const script = document.createElement('script');
+    ultimoScript = script;
 
-    .container {
-      text-align: center;
-      padding: 40px;
-      max-width: 420px;
-      width: 100%;
-    }
+    script.src =
+      APPS_SCRIPT_URL +
+      '?email=' +
+      encodeURIComponent(email) +
+      '&callback=handleResponse&_=' +
+      Date.now(); // cache buster
 
-    .logo {
-      font-size: 28px;
-      font-weight: 700;
-      letter-spacing: 4px;
-      text-transform: uppercase;
-      margin-bottom: 48px;
-      color: #fff;
-    }
+    script.onerror = function () {
+      intentos++;
+      limpiarScript();
 
-    .spinner {
-      width: 56px;
-      height: 56px;
-      margin: 0 auto 32px;
-      border: 4px solid rgba(255, 255, 255, 0.1);
-      border-top: 4px solid #c8a96e;
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-    }
-
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-
-    .status-text {
-      font-size: 18px;
-      color: #c8a96e;
-      font-weight: 500;
-      margin-bottom: 12px;
-    }
-
-    .sub-text {
-      font-size: 14px;
-      color: rgba(255, 255, 255, 0.4);
-      line-height: 1.5;
-    }
-
-    .dots {
-      display: inline-block;
-    }
-
-    .dots span {
-      display: inline-block;
-      animation: dotPulse 1.4s infinite;
-    }
-
-    .dots span:nth-child(2) { animation-delay: 0.2s; }
-    .dots span:nth-child(3) { animation-delay: 0.4s; }
-
-    @keyframes dotPulse {
-      0%, 60%, 100% { opacity: 0.2; }
-      30% { opacity: 1; }
-    }
-
-    .error-icon {
-      font-size: 48px;
-      margin-bottom: 24px;
-    }
-
-    .error-text {
-      font-size: 16px;
-      color: #e74c3c;
-      margin-bottom: 8px;
-    }
-
-    .retry-btn {
-      margin-top: 24px;
-      padding: 12px 28px;
-      background: #c8a96e;
-      color: #0f0f0f;
-      border: none;
-      border-radius: 6px;
-      font-size: 15px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-
-    .retry-btn:hover {
-      background: #b8955a;
-    }
-
-    .success-icon {
-      font-size: 48px;
-      margin-bottom: 24px;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="logo">THE TERRACE</div>
-
-    <!-- Estado: cargando -->
-    <div id="loading">
-      <div class="spinner"></div>
-      <div class="status-text">Preparando tu pago<span class="dots"><span>.</span><span>.</span><span>.</span></span></div>
-      <p class="sub-text">Estamos generando tu enlace de pago.<br/>No cierres esta ventana.</p>
-    </div>
-
-    <!-- Estado: éxito -->
-    <div id="success" style="display: none;">
-      <div class="success-icon">✓</div>
-      <div class="status-text">¡Listo!</div>
-      <p class="sub-text">Te estamos redirigiendo al pago...</p>
-    </div>
-
-    <!-- Estado: error -->
-    <div id="error" style="display: none;">
-      <div class="error-icon">⚠️</div>
-      <div class="error-text" id="errorMessage">Algo salió mal</div>
-      <p class="sub-text">Por favor, intenta de nuevo.</p>
-      <button class="retry-btn" onclick="location.reload()">Reintentar</button>
-    </div>
-  </div>
-
-  <script>
-    // URL del Apps Script
-    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyIn5hYqNcybMVJG0677ABowA7SeUhBEM3cutWaaVfd3jVe8EzLLg4sv-qQRGETxml0/exec';
-
-    const POLLING_INTERVAL = 2500;  // Cada 2.5 segundos
-    const MAX_TIMEOUT = 120000;     // Máximo 2 minutos
-
-    const params = new URLSearchParams(window.location.search);
-    const email = params.get('email');
-
-    let intentos = 0;
-    let polling = null;
-    let timeoutId = null;
-
-    if (!email) {
-      mostrarError('No se detectó un email válido. Por favor, vuelve al formulario.');
-    } else {
-      polling = setInterval(buscarLink, POLLING_INTERVAL);
-
-      timeoutId = setTimeout(() => {
-        clearInterval(polling);
-        mostrarError('El proceso tardó demasiado. Por favor, intenta de nuevo.');
-      }, MAX_TIMEOUT);
-    }
-
-    // Usar JSONP para evitar problemas de CORS con Apps Script
-    function buscarLink() {
-      var script = document.createElement('script');
-      script.src = APPS_SCRIPT_URL + '?email=' + encodeURIComponent(email) + '&callback=handleResponse';
-      script.onerror = function() {
-        intentos++;
-        document.head.removeChild(script);
-        if (intentos >= 5) {
-          clearInterval(polling);
-          clearTimeout(timeoutId);
-          mostrarError('No se pudo conectar con el servidor. Por favor, intenta de nuevo.');
-        }
-      };
-      document.head.appendChild(script);
-    }
-
-    // Esta función la llama automáticamente el JSONP cuando recibe la respuesta
-    window.handleResponse = function(data) {
-      if (data.status === 'success' && data.link) {
+      if (intentos >= 5) {
         clearInterval(polling);
         clearTimeout(timeoutId);
-        mostrarExito();
-
-        setTimeout(() => {
-          window.location.href = data.link;
-        }, 1500);
+        mostrarError('No se pudo conectar con el servidor. Por favor, intenta de nuevo.');
       }
-      // Si es 'pending', no hacer nada, el polling sigue
     };
 
-    function mostrarExito() {
-      document.getElementById('loading').style.display = 'none';
-      document.getElementById('success').style.display = 'block';
+    document.head.appendChild(script);
+  }
+
+  window.handleResponse = function (data) {
+    limpiarScript();
+
+    if (yaRedirigido) return;
+
+    if (data.status === 'success' && data.link) {
+      yaRedirigido = true;
+      clearInterval(polling);
+      clearTimeout(timeoutId);
+      mostrarExito();
+
+      setTimeout(() => {
+        window.location.href = data.link;
+      }, 1500);
+      return;
     }
 
-    function mostrarError(mensaje) {
-      document.getElementById('loading').style.display = 'none';
-      document.getElementById('errorMessage').textContent = mensaje;
-      document.getElementById('error').style.display = 'block';
+    if (data.status === 'error') {
+      intentos++;
+      if (intentos >= 5) {
+        clearInterval(polling);
+        clearTimeout(timeoutId);
+        mostrarError(data.message || 'Error al generar el pago.');
+      }
     }
-  </script>
-</body>
-</html>
+    // status === 'pending' → no hacer nada
+  };
+
+  function limpiarScript() {
+    if (ultimoScript) {
+      document.head.removeChild(ultimoScript);
+      ultimoScript = null;
+    }
+  }
+
+  function mostrarExito() {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('success').style.display = 'block';
+  }
+
+  function mostrarError(mensaje) {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('errorMessage').textContent = mensaje;
+    document.getElementById('error').style.display = 'block';
+  }
+</script>
