@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Procesando pago...</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #0f0f0f;
+      font-family: 'Segoe UI', sans-serif;
+      color: #fff;
+    }
+
+    .container {
+      text-align: center;
+      padding: 40px;
+      max-width: 420px;
+      width: 100%;
+    }
+
+    .logo {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      margin-bottom: 48px;
+      color: #fff;
+    }
+
+    .spinner {
+      width: 56px;
+      height: 56px;
+      margin: 0 auto 32px;
+      border: 4px solid rgba(255, 255, 255, 0.1);
+      border-top: 4px solid #c8a96e;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .status-text {
+      font-size: 18px;
+      color: #c8a96e;
+      font-weight: 500;
+      margin-bottom: 12px;
+    }
+
+    .sub-text {
+      font-size: 14px;
+      color: rgba(255, 255, 255, 0.4);
+      line-height: 1.5;
+    }
+
+    .dots {
+      display: inline-block;
+    }
+
+    .dots span {
+      display: inline-block;
+      animation: dotPulse 1.4s infinite;
+    }
+
+    .dots span:nth-child(2) { animation-delay: 0.2s; }
+    .dots span:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes dotPulse {
+      0%, 60%, 100% { opacity: 0.2; }
+      30% { opacity: 1; }
+    }
+
+    /* Estado de error */
+    .error-icon {
+      font-size: 48px;
+      margin-bottom: 24px;
+    }
+
+    .error-text {
+      font-size: 16px;
+      color: #e74c3c;
+      margin-bottom: 8px;
+    }
+
+    .retry-btn {
+      margin-top: 24px;
+      padding: 12px 28px;
+      background: #c8a96e;
+      color: #0f0f0f;
+      border: none;
+      border-radius: 6px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .retry-btn:hover {
+      background: #b8955a;
+    }
+
+    /* Estado de éxito (breve antes de redirigir) */
+    .success-icon {
+      font-size: 48px;
+      margin-bottom: 24px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container" id="container">
+    <div class="logo">THE TERRACE</div>
+
+    <!-- Estado: cargando (por defecto) -->
+    <div id="loading">
+      <div class="spinner"></div>
+      <div class="status-text">Preparando tu pago<span class="dots"><span>.</span><span>.</span><span>.</span></span></div>
+      <p class="sub-text">Estamos generando tu enlace de pago.<br/>No cierres esta ventana.</p>
+    </div>
+
+    <!-- Estado: éxito (se muestra brevemente antes de redirigir) -->
+    <div id="success" style="display: none;">
+      <div class="success-icon">✓</div>
+      <div class="status-text">¡Listo!</div>
+      <p class="sub-text">Te estamos redirigiendo al pago...</p>
+    </div>
+
+    <!-- Estado: error / timeout -->
+    <div id="error" style="display: none;">
+      <div class="error-icon">⚠️</div>
+      <div class="error-text" id="errorMessage">Algo salió mal</div>
+      <p class="sub-text">Por favor, intenta de nuevo.</p>
+      <button class="retry-btn" onclick="location.reload()">Reintentar</button>
+    </div>
+  </div>
+
+  <script>
+    // ============================================================
+    // CONFIGURACIÓN - Cambia estas variables según tu entorno
+    // ============================================================
+    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/TU_ID_DEL_SCRIPT_AQUI/exec';
+    // ^ Reemplaza con la URL que te da al desplegar el Apps Script como web app
+
+    const POLLING_INTERVAL = 2500;   // Cada 2.5 segundos consulta
+    const MAX_TIMEOUT = 120000;      // Máximo 2 minutos de espera
+    // ============================================================
+
+    // Obtener el email de la URL (ejemplo: ?email=usuario@gmail.com)
+    const params = new URLSearchParams(window.location.search);
+    const email = params.get('email');
+
+    let intentos = 0;
+    let polling = null;
+
+    // Si no hay email en la URL, mostrar error inmediatamente
+    if (!email) {
+      mostrarError('No se detectó un email válido. Por favor, vuelve al formulario.');
+    } else {
+      // Iniciar polling
+      polling = setInterval(buscarLink, POLLING_INTERVAL);
+
+      // Timeout máximo: si en 2 minutos no aparece el link, parar
+      setTimeout(() => {
+        clearInterval(polling);
+        mostrarError('El proceso tardó demasiado. Por favor, intenta de nuevo.');
+      }, MAX_TIMEOUT);
+    }
+
+    async function buscarLink() {
+      try {
+        const response = await fetch(`${APPS_SCRIPT_URL}?email=${encodeURIComponent(email)}`);
+        const data = await response.json();
+
+        if (data.status === 'success' && data.link) {
+          // ¡Se encontró el link! Parar polling y redirigir
+          clearInterval(polling);
+          mostrarExito();
+
+          // Redirigir después de 1.5 segundos para que el usuario vea el mensaje
+          setTimeout(() => {
+            window.location.href = data.link;
+          }, 1500);
+
+        }
+        // Si status es 'pending', no hacer nada, el polling sigue
+
+      } catch (error) {
+        // Si falla una petición, no parar aún, puede ser temporal
+        intentos++;
+        if (intentos >= 5) {
+          clearInterval(polling);
+          mostrarError('No se pudo conectar con el servidor. Por favor, intenta de nuevo.');
+        }
+      }
+    }
+
+    function mostrarExito() {
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('success').style.display = 'block';
+    }
+
+    function mostrarError(mensaje) {
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('errorMessage').textContent = mensaje;
+      document.getElementById('error').style.display = 'block';
+    }
+  </script>
+</body>
+</html>
