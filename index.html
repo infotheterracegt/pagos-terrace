@@ -98,11 +98,7 @@
     document.getElementById('loading').style.display = 'none';
     document.getElementById('errorMessage').textContent = mensaje;
     document.getElementById('error').style.display = 'block';
-  }
-</script>
-// Agregar esto al final del script, antes de cerrar </script>
-
-// Log de debug
+  }// Log de debug
 console.log('Email detectado:', email);
 console.log('URL de polling:', APPS_SCRIPT_URL + '?email=' + encodeURIComponent(email) + '&callback=handleResponse');
 
@@ -132,3 +128,6 @@ window.handleResponse = function (data) {
   }
   // status === 'pending' → no hacer nada
 };
+
+</script>
+
